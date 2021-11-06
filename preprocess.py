@@ -39,6 +39,13 @@ class MidiDataset(Dataset):
         pitch_tranpose = np.random.randint(-min_pitch, 88-max_pitch, size=2) 
         tempo_change = np.random.random(size=2)*0.1 + 0.95
 
+        # mask
+        mask = np.zeros(2048, dtype=np.bool_)
+        global_mask = np.zeros(64, dtype=np.bool_)
+        if not np.abs(indices[1]-indices[0]) >= 2048:
+            mask[:indices[1]-indices[0]] = True
+            global_mask[:(indices[1]-indices[0]+16)//32] = True
+
         for s in range(2):
             sample = []
             for i in range(indices[s], indices[s]+2048):
@@ -61,5 +68,5 @@ class MidiDataset(Dataset):
 
         samples = torch.tensor(samples)
         samples = torch.reshape(samples, (2, 16, 128, 38))
-                
-        return samples.type(torch.FloatTensor)
+
+        return samples.type(torch.FloatTensor), (mask, np.flip(mask).copy()), (global_mask, np.flip(global_mask).copy())

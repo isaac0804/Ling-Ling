@@ -3,22 +3,22 @@ import torch.nn.functional as F
 from torch import nn
 
 
-class GlobalBlock(nn.Module):
+class PatchBlock(nn.Module):
     """
-    Global Block 
+    Patch Block 
     Input: (N//p, p, d_global)
     Output: (N//p, d_global)
     """
     def __init__(self):
         super().__init__()
-        self.emb_layer = [
+        self.emb_layer = nn.ModuleList([
             nn.Linear(128, 16),
             nn.Linear(16, 1),
-        ]
-        self.MLP = [
+        ])
+        self.MLP = nn.ModuleList([
             nn.Linear(16, 16),
             nn.Linear(16, 16),
-        ]
+        ])
         self.MHA = nn.MultiheadAttention(16, 4)
         self.layer_norm = nn.LayerNorm(16)
 
@@ -40,10 +40,10 @@ class LocalBlock(nn.Module):
     """
     def __init__(self):
         super().__init__()
-        self.MLP = [
+        self.MLP = nn.ModuleList([
             nn.Linear(16, 16),
             nn.Linear(16, 16),
-        ]
+        ])
         self.MHA = nn.MultiheadAttention(16, 4, batch_first=True)
         self.layer_norm = nn.LayerNorm(16)
 
