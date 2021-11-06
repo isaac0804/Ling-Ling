@@ -12,7 +12,7 @@ class PatchBlock(nn.Module):
     def __init__(self):
         super().__init__()
         self.emb_layer = nn.ModuleList([
-            nn.Linear(128, 16),
+            nn.Linear(64, 16),
             nn.Linear(16, 1),
         ])
         self.MLP = nn.ModuleList([
@@ -36,7 +36,7 @@ class PatchBlock(nn.Module):
 class LocalBlock(nn.Module):
     """
     Local Block
-    Input: (16, 128, 16)
+    Input: (16, 64, 16)
     """
     def __init__(self):
         super().__init__()

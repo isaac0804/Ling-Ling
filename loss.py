@@ -10,6 +10,7 @@ class GlobalLoss(nn.Module):
         self.teacher_temp = teacher_temp
         self.center_momentum = center_momentum
         self.register_buffer('center', torch.zeros(1, out_dim))
+
     
     def forward(self, student_output, teacher_output):
         student_temp = student_output / self.student_temp
@@ -29,7 +30,7 @@ class GlobalLoss(nn.Module):
         self.center = self.center * self.center_momentum + batch_center * (1-self.center_momentum)
 
 
-class Loss(nn.Module):
+class PairLoss(nn.Module):
     def __init__(self, out_dim, student_temp=0.1, teacher_temp=0.04, center_momentum=0.9):
         super().__init__()
         self.out_dim = out_dim
@@ -37,6 +38,7 @@ class Loss(nn.Module):
         self.teacher_temp = teacher_temp
         self.center_momentum = center_momentum
         self.register_buffer('center', torch.zeros(1, out_dim))
+        self.dummy_param = nn.Parameter(torch.empty(0))
     
     def forward(self, student_output, teacher_output):
         student_temp = student_output / self.student_temp
@@ -45,19 +47,16 @@ class Loss(nn.Module):
         student_sm = F.log_softmax(student_temp, dim=-1) 
         teacher_sm = F.softmax(teacher_temp, dim=-1).detach() 
 
-        total_loss = 0.0
+        total_loss = torch.tensor(0.0).to(self.dummy_param.device)
         n_term = 0
          
-        for s in student_sm:
-            for t in teacher_sm:
-                loss = torch.sum(-t*s, dim=-1) 
-                total_loss += loss
-                n_term += 1
+        for s, t in zip(student_sm, teacher_sm):
+            loss = torch.sum(-t*s, dim=-1) 
+            total_loss += loss
+            n_term += 1
 
         self.update_center(teacher_output)
-        if n_term == 0:
-            return torch.tensor(total_loss)
-        total_loss /= n_term
+        total_loss /= (n_term + 1e-3)
         return total_loss
     
     @torch.no_grad()

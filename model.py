@@ -10,7 +10,7 @@ class Model(nn.Module):
         super().__init__()
         self.num_layers = 4
         self.num_patches = 16
-        self.patch = 128
+        self.patch = 64 
         self.linear = nn.Linear(38, 16)
         self.patch_layers = nn.ModuleList([
             PatchBlock(),
@@ -32,20 +32,21 @@ class Model(nn.Module):
     
     def forward(self, x):
         x = self.linear(x)
-        x_patch = torch.zeros((self.num_layers, self.num_patches, 16))
-
+        x_patches = []
         for i in range(self.num_layers):
-            x_patch[i] = self.patch_layers[i](x)
-            x = self.local_layers[i](x, x_patch[i])
+            x_patch = self.patch_layers[i](x)
+            x_patches.append(x_patch)
+            x = self.local_layers[i](x, x_patch)
             if i != self.num_layers:
                 x = self.shift(x, self.num_patches//self.num_layers)
             else:
                 x = self.shift(x, self.num_patches*(-self.num_layers+1))
 
-        x_patch = torch.permute(x_patch, (1, 0, 2))
-        x_patch = torch.reshape(x_patch, (64, 16))
+        x_patches = torch.stack(x_patches, dim=0)
+        x_patches = torch.permute(x_patches, (1, 0, 2))
+        x_patches = torch.reshape(x_patches, (64, 16))
 
-        x_global = torch.clone(x_patch.T)
+        x_global = torch.clone(x_patches.T)
         for layer in self.global_MLP:
             x_global = F.relu(layer(x_global))
         x_global = torch.squeeze(x_global.T)
