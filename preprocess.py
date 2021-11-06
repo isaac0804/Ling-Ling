@@ -65,4 +65,4 @@ class MidiDataset(Dataset):
         samples = torch.tensor(samples)
         samples = torch.reshape(samples, (2, 16, 64, 38))
 
-        return samples.type(torch.FloatTensor), (mask, np.flip(mask).copy()), (global_mask, np.flip(global_mask).copy())
+        return samples.float(), (mask, np.flip(mask).copy()), (global_mask, np.flip(global_mask).copy())

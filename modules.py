@@ -40,6 +40,10 @@ class LocalBlock(nn.Module):
     """
     def __init__(self):
         super().__init__()
+        self.emb_layer = nn.ModuleList([
+            nn.Linear(32, 32),
+            nn.Linear(32, 16),
+        ])
         self.MLP = nn.ModuleList([
             nn.Linear(16, 16),
             nn.Linear(16, 16),
@@ -47,13 +51,18 @@ class LocalBlock(nn.Module):
         self.MHA = nn.MultiheadAttention(16, 4, batch_first=True)
         self.layer_norm = nn.LayerNorm(16)
 
-    def forward(self, x, x_global):
-        # not concat for now, pass global feature into query of MHA
-        # x_global = torch.concat([x_global]*128, 0) # doubtful
-        x_global = torch.unsqueeze(x_global, 1)
-        # x = torch.concat([x, x_global], dim=-1) 
-        attn, _ = self.MHA(x_global, x, x)
+    def forward(self, x, x_global, return_attention=False):
+        x_global = torch.concat([x_global]*64, -1) # doubtful
+        x_global = torch.reshape(x_global, (16, 64, 16)) # doubtful
+        x = torch.concat([x, x_global], dim=-1) 
+        for layer in self.emb_layer:
+            x = F.relu(layer(x))
+        attn, attn_w = self.MHA(x, x, x)
         x = self.layer_norm(attn+x)
         for layer in self.MLP:
             x = F.relu(layer(x)) + x
-        return x
+        if not return_attention:
+            return x
+        else:
+            return x, attn, attn_w
+        

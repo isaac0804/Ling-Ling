@@ -8,8 +8,8 @@ from loss import GlobalLoss, PairLoss
 from model import Model
 from preprocess import MidiDataset
 
-epochs = 10
-learning_rate = 0.0005
+epochs = 200
+learning_rate = 0.005
 # device = torch.device('cuda')
 device = torch.device('cpu')
 
@@ -19,7 +19,7 @@ loader = DataLoader(dataset, shuffle=True, batch_size=None)
 student = Model()
 teacher = Model()
 student, teacher = student.to(device), teacher.to(device)
-optimizer = Adam(student.parameters())
+optimizer = Adam(student.parameters(), lr=learning_rate)
 global_criterion = GlobalLoss(out_dim=16).to(device)
 patch_criterion = PairLoss(out_dim=16).to(device)
 local_criterion = PairLoss(out_dim=16).to(device)
@@ -29,8 +29,10 @@ for p in teacher.parameters():
     p.requires_grad = False
 
 torch.autograd.set_detect_anomaly(True)
+best_loss = 1000000.0
 for epoch in range(1, epochs+1):
     running_loss = 0.0
+    n_term = 0.0
     for i,data in tqdm.tqdm(enumerate(loader, 0), total=len(loader)):
 
         midi, local_mask, patch_mask = data
@@ -45,6 +47,7 @@ for epoch in range(1, epochs+1):
         # global Criterion Loss
         global_loss= global_criterion(torch.unsqueeze(s_patch,0), torch.unsqueeze(t_patch,0))
         loss = global_loss
+        n_term += 1
 
         # patch Criterion Loss
         patch_loss = torch.tensor(0.0)
@@ -55,6 +58,7 @@ for epoch in range(1, epochs+1):
             masked_t_patch = masked_t_patch.view(-1, 16)
             patch_loss = patch_criterion(masked_s_patch, masked_t_patch)
             loss += patch_loss
+            n_term += 1
 
         # local Criterion Loss
         local_loss = torch.tensor(0.0)
@@ -65,6 +69,7 @@ for epoch in range(1, epochs+1):
             masked_t = masked_t.view(-1, 16)
             local_loss = local_criterion(masked_s, masked_t)
             loss += local_loss
+            n_term += 1
 
         # backward 
         loss.backward()
@@ -78,6 +83,7 @@ for epoch in range(1, epochs+1):
             for student_p, teacher_p in zip(student.parameters(), teacher.parameters()):
                 teacher_p.data.mul_(0.995)
                 teacher_p.data.add_((0.005)*student_p.detach().data)
-    torch.save(teacher.state_dict(), f"trained_models/model_epoch-{epoch}_loss-{running_loss/i:4.4f}.pt")
-    print(f"==================== Epoch {epoch} ====================")
-    print(f"Loss: {running_loss/i}")
+    if best_loss < running_loss/n_term:
+        best_loss = running_loss/n_term
+        torch.save(teacher.state_dict(), f"checkpoints/model_epoch-{epoch}_loss-{running_loss/n_term:4.2f}.pt")
+    print(f"Epoch: {epoch},  Loss: {running_loss/n_term}")
