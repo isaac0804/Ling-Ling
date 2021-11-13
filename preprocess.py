@@ -48,21 +48,32 @@ class MidiDataset(Dataset):
                 octave, pitch = (notes[i].pitch-21+pitch_tranpose[s])//12, (notes[i].pitch-21+pitch_tranpose[s])%12
                 duration = notes[i].duration*tempo_change[s]
                 velocity = notes[i].velocity
-                if i != 0:
-                    time_shift = tempo_change[s]*(notes[i].start- notes[i-1].start)//10
-                else:
-                    time_shift = 0
+                prev_notes = [0.0]*32
+                for j in range(min(i, 8)):
+                    prev_notes[4*(7-j)] = (tempo_change[s]*(notes[i-j].start- notes[i-j-1].start)//100)/100
+                    prev_notes[4*(7-j)+1] = (tempo_change[s]*(notes[i-j].start- notes[i-j-1].start)%100)/100
+                    prev_notes[4*(7-j)+2] = ((notes[i-j].pitch - notes[i-j-1].pitch)//12)/8
+                    prev_notes[4*(7-j)+3] = ((notes[i-j].pitch - notes[i-j-1].pitch)%12)/12
+                
+                # binary encoding causes the note representation to be almost the same
+                # ret = [0]*38
+                # ret[:3] = to_bits(octave, 3)
+                # ret[3:7] = to_bits(pitch, 4)
+                # ret[7:21] = to_bits(min(int(duration), 16383), 14)
+                # ret[21:34] = to_bits(min(int(time_shift), 8191), 13)
+                # ret[34:38] = to_bits(min(velocity//8, 15), 4)
 
-                ret = [0]*38
-                ret[:3] = to_bits(octave, 3)
-                ret[3:7] = to_bits(pitch, 4)
-                ret[7:21] = to_bits(min(int(duration), 16383), 14)
-                ret[21:34] = to_bits(min(int(time_shift), 8191), 13)
-                ret[34:38] = to_bits(min(velocity//8, 15), 4)
+                ret = [0.0]*55
+                ret[octave] = 1.0
+                ret[8+pitch] = 1.0
+                ret[20] = velocity/128
+                ret[21] = (duration//100)/100
+                ret[22] = (duration%100)/100
+                ret[23:55] = prev_notes 
                 sample.append(ret)
             samples.append(sample)
 
         samples = torch.tensor(samples)
-        samples = torch.reshape(samples, (2, 16, 64, 38))
+        samples = torch.reshape(samples, (2, 16, 64, 55))
 
         return samples.float(), (mask, np.flip(mask).copy()), (global_mask, np.flip(global_mask).copy())

@@ -3,7 +3,7 @@ from torch import nn
 import torch.nn.functional as F
 
 class GlobalLoss(nn.Module):
-    def __init__(self, out_dim, student_temp=0.1, teacher_temp=0.04, center_momentum=0.9):
+    def __init__(self, out_dim, student_temp=0.2, teacher_temp=0.02, center_momentum=0.8):
         super().__init__()
         self.out_dim = out_dim
         self.student_temp = student_temp
@@ -31,7 +31,7 @@ class GlobalLoss(nn.Module):
 
 
 class PairLoss(nn.Module):
-    def __init__(self, out_dim, student_temp=0.1, teacher_temp=0.04, center_momentum=0.9):
+    def __init__(self, out_dim, student_temp=0.2, teacher_temp=0.04, center_momentum=0.8):
         super().__init__()
         self.out_dim = out_dim
         self.student_temp = student_temp

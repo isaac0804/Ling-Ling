@@ -4,7 +4,7 @@ from model import Model
 
 model = Model()
 
-notes = torch.rand((16, 128, 16))
+notes = torch.rand((16, 64, 55))
 output = model(notes)
 print("========= Output =========")
-print(f"Size: {output.shape}")
+print(f"Size: {output}")
