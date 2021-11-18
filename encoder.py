@@ -1,7 +1,5 @@
 import torch
 import torch.nn as nn
-from torch.nn.modules import padding
-
 
 class MLP(nn.Module):
     def __init__(self, features, act_layer=nn.GELU, drop=0.0):
@@ -148,9 +146,8 @@ class PatchBlock(nn.Module):
             y.append(torch.squeeze(temp))
         x = torch.stack(y, dim=-2)
         x = torch.sum(x, dim=-2)
-        emb = torch.clone(x)
         x = self.norm_layer(self.mlp(x))
-        return x, emb
+        return x
 
 
 class GlobalBlock(nn.Module):
@@ -357,7 +354,7 @@ class Encoder(nn.Module):
     def shift(self, x, value):
         B, N, P, C = x.shape
         x = x.reshape(B, N * P, C)
-        x = torch.concat([x[..., value:], x[..., :value]], dim=-1)
+        x = torch.roll(x, shifts=-value, dims=1)
         x = x.reshape(B, N, P, C)
         return x
 
@@ -367,7 +364,7 @@ class Encoder(nn.Module):
         res = x
         patches = []
         for i in range(self.depth):
-            patch, _ = self.patch_blocks[i](x)
+            patch = self.patch_blocks[i](x)
             x = self.local_blocks[i](x)
             if (i + 1) > self.depth // 2:
                 patches.append(patch)
@@ -393,12 +390,12 @@ class Encoder(nn.Module):
         res = x
         patches = []
         for i in range(self.depth):
+            patch = self.patch_blocks[i](x)
             if i == 4:
-                patch, emb = self.patch_blocks[i](x)
                 x, attn = self.local_blocks[i](x, return_attention=True)
+                emb=torch.clone(x)
                 emb=torch.clone(attn)
             else:
-                patch, _ = self.patch_blocks[i](x)
                 x = self.local_blocks[i](x)
             if (i + 1) > self.depth // 2:
                 patches.append(patch)
@@ -415,11 +412,34 @@ class Encoder(nn.Module):
             x = self.norm_layer1(x)
 
         # emb = torch.clone(x)
-        # emb = torch.clone(patch)
+        emb = torch.clone(patch)
         patches = torch.stack(patches, dim=2).flatten(start_dim=1, end_dim=2)
         patches = self.norm_layer2(patches)
         # emb = torch.clone(patches)
         global_embed = self.global_block(patches)
         # emb = torch.clone(global_embed)
-
         return emb 
+
+    def return_attention(self, x):
+        x = self.prepare_tokens(x)
+        x = self.note_embed(x)
+        res = x
+        patches = []
+        for i in range(self.depth):
+            patch = self.patch_blocks[i](x)
+            if i == self.depth-1:
+                x, attn = self.local_blocks[i](x, return_attention=True)
+                return attn
+            else:
+                x = self.local_blocks[i](x)
+            if (i + 1) > self.depth // 2:
+                patches.append(patch)
+            if (i + 1) % (self.depth // 2) != 0:
+                x = self.shift(x + res, self.patch_size // (self.depth // 2))
+                res = self.shift(res, self.patch_size // (self.depth // 2))
+            else:
+                x = self.shift(
+                    x + res, -self.patch_size + self.patch_size // (self.depth//2)
+                )
+                res = self.shift(res, -self.patch_size + self.patch_size // (self.depth//2))
+            x = self.norm_layer1(x)
