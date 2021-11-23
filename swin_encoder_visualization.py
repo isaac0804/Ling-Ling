@@ -17,7 +17,7 @@ model = SwinEncoder(
     num_heads=8,
     num_classes=None,
     downsample_res=4,
-    depth=[4, 4, 2, 2],
+    depth=[8, 4, 2, 2],
     seq_length=1024,
     mlp_drop=0.5,
     attn_drop=0.5,
@@ -26,13 +26,13 @@ model = SwinEncoder(
     norm_layer=nn.LayerNorm,
 )
 
+# model.load_state_dict(torch.load("checkpoints/model_epoch-100_loss-6.24.pt"))
 model.load_state_dict(torch.load("checkpoints/model_epoch-100_loss-6.24.pt"))
-# model.load_state_dict(torch.load("model_epoch-9_loss-6.53.pt"))
 model.eval()
 
 dataset = MidiDataset()
 
-midi = muspy.read_midi("midi/0132.mid")
+midi = muspy.read_midi("midi/0131.mid")
 midi_notes = midi.tracks[0].notes
 samples = []
 for j in range(math.ceil(len(midi_notes) / 1024)):

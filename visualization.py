@@ -19,7 +19,7 @@ model = SwinEncoder(
     num_heads=8,
     num_classes=None,
     downsample_res=4,
-    depth=[4, 4, 2, 2],
+    depth=[8, 4, 2, 2],
     seq_length=1024,
     mlp_drop=0.5,
     attn_drop=0.5,
@@ -102,12 +102,12 @@ sns.heatmap(embed, ax=ax)
 #     ax[i // 4, i % 4].set_title(f"Head {i+1}")
 # plt.show()
 
-# for head in range(8):
-#     midi = muspy.read_midi("midi/0130.mid")
-#     midi_notes = copy.deepcopy(midi.tracks[0].notes)
-#     for i in range(len(midi_notes)):
-#         if embed[head, i] == 0:
-#             midi.tracks[0].notes.remove(midi_notes[i])
-#     print(len(midi.tracks[0].notes))
-#     midi.write_midi(f"0130_head{head}.mid")
-# plt.show()
+for head in range(8):
+    midi = muspy.read_midi("midi/0130.mid")
+    midi_notes = copy.deepcopy(midi.tracks[0].notes)
+    for i in range(len(midi_notes)):
+        if embed[head, i] == 0:
+            midi.tracks[0].notes.remove(midi_notes[i])
+    print(len(midi.tracks[0].notes))
+    midi.write_midi(f"0130_head{head}.mid")
+plt.show()

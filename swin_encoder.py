@@ -156,7 +156,6 @@ class SwinEncoder(nn.Module):
         embed_dim=64,
         window_size=16,
         num_heads=8,
-        num_classes=None,
         downsample_res=2,
         depth=[4, 4, 2, 2],
         seq_length=1024,
@@ -165,6 +164,7 @@ class SwinEncoder(nn.Module):
         mlp_drop=0.0,
         act_layer=nn.GELU,
         norm_layer=nn.LayerNorm,
+        num_classes=None
     ):
         super().__init__()
         assert seq_length % (downsample_res ** (len(depth)-1)) == 0
@@ -193,24 +193,21 @@ class SwinEncoder(nn.Module):
         self.head_dim = num_classes if num_classes else self.bottleneck_dim
         self.norm = nn.LayerNorm(self.bottleneck_dim)
         self.avgpool = nn.AdaptiveAvgPool1d(1)
-        # self.head = nn.Linear(self.bottleneck_dim, self.head_dim)
         self.head = MLP([self.bottleneck_dim, self.head_dim, self.head_dim], act_layer, mlp_drop)
 
     def forward(self, x):
         x = self.note_embed(x)
+        a = [x]
         for block in self.blocks:
             x = block(x)
-        x = self.norm(x)
-        x = self.avgpool(x.transpose(-1, -2))
-        x = torch.flatten(x, 1)
-        x = self.head(x)
-        return x
+            a.append(x)
+        return a
 
     def debug(self, x):
         x = self.note_embed(x)
         for idx, block in enumerate(self.blocks):
             x, attn, attn_2 = block.debug(x)
-            if idx == 3:
+            if idx == 2:
                 return x
                 return attn
         x = self.norm(x)

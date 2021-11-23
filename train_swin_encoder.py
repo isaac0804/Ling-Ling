@@ -14,18 +14,18 @@ fix_random_seeds(seed=42)
 dataset = MidiDataset(global_local=None, random_mask=0.4)
 loader = DataLoader(dataset, shuffle=True, batch_size=None)
 
-epochs = 300
-optim_frequency = 20
+epochs = 100
+optim_frequency = 5
 learning_rate_scheduler = cosine_scheduler(
     base_value=1e-4,
     final_value=1e-5,
     epochs=epochs,
     niter_per_ep=len(loader),
-    warmup_epochs=20,
+    warmup_epochs=10,
     start_warmup_value=0,
 )
 teacher_momentum_scheduler = cosine_scheduler(
-    base_value=0.995, final_value=1, epochs=epochs, niter_per_ep=len(loader)
+    base_value=0.99, final_value=1, epochs=epochs, niter_per_ep=len(loader)
 )
 device = torch.device("cuda")
 # device = torch.device("cpu")
@@ -67,7 +67,7 @@ global_criterion = GlobalLoss(
     out_dim=512,
     warmup_teacher_temp=0.04, 
     teacher_temp=0.07,
-    warmup_teacher_temp_epochs=30,
+    warmup_teacher_temp_epochs=10,
     n_epochs=epochs,
     student_temp=0.1,
     center_momentum=0.9,
