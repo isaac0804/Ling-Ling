@@ -15,8 +15,6 @@ class EncoderBlock(nn.Module):
         num_heads=8,
         attn_drop=0.0,
         proj_drop=0.0,
-        mlp_drop=0.0,
-        act_layer=nn.GELU,
         norm_layer=nn.LayerNorm,
     ):
         super().__init__()
@@ -28,42 +26,42 @@ class EncoderBlock(nn.Module):
         self.norm_layer4 = norm_layer([window_size, dim])
         self.attention = Attention(dim, num_heads, attn_drop, proj_drop)
         self.shifted_attention = Attention(dim, num_heads, attn_drop, proj_drop)
-        self.mlp1 = MLP([dim, dim], act_layer, mlp_drop)
-        self.mlp2 = MLP([dim, dim], act_layer, mlp_drop)
+        # self.mlp1 = MLP([dim, dim, dim], act_layer, mlp_drop)
+        # self.mlp2 = MLP([dim, dim, dim], act_layer, mlp_drop)
 
-    def shift(self, x, N, reverse=False):
-        x = x.view(-1, N, self.dim)
+    def shift(self, x, reverse=False):
         if reverse:
             torch.roll(x, shifts=self.window_size // 2, dims=1)
         else:
             torch.roll(x, shifts=-self.window_size // 2, dims=1)
-        x = x.view(-1, self.window_size, self.dim)
         return x
 
     def forward(self, x):
         B, N, C = x.shape
-        x = x.view(B * N // self.window_size, self.window_size, C)
-        x = self.attention(self.norm_layer1(x))[0] + x
-        x = self.mlp1(self.norm_layer2(x)) + x
-        x = self.shift(x, N)
-        x = self.shifted_attention(self.norm_layer3(x))[0] + x
-        x = self.mlp2(self.norm_layer4(x)) + x
-        x = self.shift(x, N, reverse=True)
-        x = x.view(B, N, C)
+        x = x.reshape(B * N // self.window_size, self.window_size, C)
+        x = self.attention(self.norm_layer1(x))[0]
+        # x = self.mlp1(self.norm_layer2(y)) + x
+        x = x.reshape(B, N, C)
+        x = self.shift(x)
+        x = x.reshape(B * N // self.window_size, self.window_size, C)
+        x = self.shifted_attention(self.norm_layer3(x))[0] 
+        # x = self.mlp2(self.norm_layer4(y)) + x
+        x = x.reshape(B, N, C)
+        x = self.shift(x, reverse=True)
         return x
 
     def debug(self, x):
         B, N, C = x.shape
-        x = x.view(B * N // self.window_size, self.window_size, C)
+        x = x.reshape(B * N // self.window_size, self.window_size, C)
         y, attn = self.attention(self.norm_layer1(x))
-        y = y + x
-        x = self.mlp1(self.norm_layer2(x)) + x
-        x = self.shift(x, N)
+        # x = self.mlp1(self.norm_layer2(y)) + x
+        x = x.reshape(B, N, C)
+        x = self.shift(x)
+        x = x.reshape(B * N // self.window_size, self.window_size, C)
         y, attn_2 = self.shifted_attention(self.norm_layer3(x))
-        y = y + x
-        x = self.mlp2(self.norm_layer4(x)) + x
-        x = self.shift(x, N, reverse=True)
-        x = x.view(B, N, C)
+        # x = self.mlp2(self.norm_layer4(y)) + x
+        x = x.reshape(B, N, C)
+        x = self.shift(x, reverse=True)
         return x, attn, attn_2
 
 
@@ -80,7 +78,7 @@ class PatchMerge(nn.Module):
         self.dim = dim
         self.downsample_res = downsample_res
         self.reduction = MLP(
-            [self.downsample_res * dim, self.downsample_res // 2 * dim],
+            [self.downsample_res * dim, self.downsample_res // 2 * dim, self.downsample_res // 2 * dim],
             act_layer,
             mlp_drop,
         )
@@ -98,7 +96,8 @@ class BasicBlock(nn.Module):
         self,
         dim,
         window_size=16,
-        downsample_res=None,
+        downsample_res=4,
+        seq_length=1024,
         num_blocks=2,
         num_heads=8,
         attn_drop=0.0,
@@ -116,27 +115,27 @@ class BasicBlock(nn.Module):
                     num_heads,
                     attn_drop,
                     proj_drop,
-                    mlp_drop,
-                    act_layer,
                     norm_layer,
                 )
                 for i in range(num_blocks)
             ]
         )
+        self.norm_layer_blocks = norm_layer([seq_length, dim])
         if downsample_res:
             self.merge = PatchMerge(
                 dim//2, downsample_res, mlp_drop, act_layer, norm_layer
             )
+            self.norm_layer_merge = norm_layer([seq_length, dim])
         else:
             self.merge = None
 
     def forward(self, x):
         if self.merge:
             x = self.merge(x)
-        res = x
+            x = self.norm_layer_merge(x)
         for block in self.blocks:
-            x = block(x) + res
-        return x
+            x = block(x) + x
+        return self.norm_layer_blocks(x)
 
     def debug(self, x):
         if self.merge:
@@ -156,7 +155,7 @@ class SwinEncoder(nn.Module):
         embed_dim=64,
         window_size=16,
         num_heads=8,
-        downsample_res=2,
+        downsample_res=4,
         depth=[4, 4, 2, 2],
         seq_length=1024,
         attn_drop=0.0,
@@ -178,6 +177,7 @@ class SwinEncoder(nn.Module):
                     embed_dim * (downsample_res//2) ** i,
                     window_size,
                     downsample_res if i > 0 else None,
+                    seq_length // (downsample_res) ** i,
                     num_attention,
                     num_heads,
                     attn_drop,

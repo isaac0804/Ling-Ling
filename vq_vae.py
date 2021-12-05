@@ -1,14 +1,16 @@
+from inspect import EndOfBlock
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 import torch
+from torch.functional import norm
 import torch.nn as nn
 import torch.nn.functional as F
 from numpy.core.fromnumeric import shape
 
-from encoder import MLP
+from encoder import MLP, Attention, Transformer
 from preprocess import MidiDataset
-from swin_encoder import SwinEncoder
+from swin_encoder import EncoderBlock, SwinEncoder
 from utils import emb_to_index
 
 
@@ -20,7 +22,9 @@ class VectorQuantizer(nn.Module):
         self.embedding_dim = embedding_dim
         self.commitment_loss = commitment_loss
 
-        self.embedding = nn.Embedding(num_embeddings, embedding_dim)
+        self.embedding = nn.Embedding(
+            num_embeddings, embedding_dim, max_norm=1, norm_type=2
+        )
         self.embedding.weight.data.normal_()
 
     def forward(self, inputs):
@@ -58,71 +62,107 @@ class VectorQuantizer(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(self, embed_dim, mlp_drop, act_layer):
+    def __init__(
+        self,
+        embed_dim,
+        num_layers,
+        num_heads,
+        window_size,
+        attn_drop,
+        mlp_drop,
+        act_layer,
+        norm_layer,
+    ):
         super().__init__()
-        self.high_up = nn.Upsample(scale_factor=(64, 1), mode="bilinear")
-        self.mid_up = nn.Upsample(scale_factor=(16, 1), mode="bilinear")
-        self.low_up = nn.Upsample(scale_factor=(4, 1), mode="bilinear")
-        self.mlp1 = MLP(
-            [embed_dim * 14, embed_dim * 8, embed_dim * 4, embed_dim],
-            act_layer,
-            mlp_drop,
+        self.high_up = nn.Upsample(scale_factor=4, mode="linear")
+        self.mid_up = nn.Upsample(scale_factor=4, mode="linear")
+        self.low_up = nn.Upsample(scale_factor=4, mode="linear")
+        self.norm_layer1 = nn.LayerNorm([16, embed_dim*4])
+        self.norm_layer2 = nn.LayerNorm([64, embed_dim*2])
+        self.norm_layer3 = nn.LayerNorm([256, embed_dim])
+        self.norm_layer4 = nn.LayerNorm([1024, embed_dim])
+        self.high_attention = nn.ModuleList(
+            [
+                EncoderBlock(
+                    dim=embed_dim * 8,
+                    window_size=4,
+                    num_heads=num_heads,
+                    attn_drop=attn_drop,
+                    proj_drop=mlp_drop,
+                    norm_layer=norm_layer,
+                )
+                for _ in range(num_layers[0])
+            ]
         )
-        self.mlp2 = MLP([embed_dim, embed_dim, embed_dim], act_layer, mlp_drop)
-        self.mlp3 = MLP([embed_dim, embed_dim, embed_dim], act_layer, mlp_drop)
-        self.mlp4 = MLP([embed_dim, embed_dim, embed_dim], act_layer, mlp_drop)
-        self.conv1 = nn.Conv2d(
-            1,
-            embed_dim // 8,
-            (15, embed_dim // 8),
-            stride=(1, embed_dim // 8),
-            padding=(7, 0),
+        self.mid_attention = nn.ModuleList(
+            [
+                EncoderBlock(
+                    dim=embed_dim * 4,
+                    window_size=4,
+                    num_heads=num_heads,
+                    attn_drop=attn_drop,
+                    proj_drop=mlp_drop,
+                    norm_layer=norm_layer,
+                )
+                for _ in range(num_layers[1])
+            ]
         )
-        self.conv2 = nn.Conv2d(
-            1,
-            embed_dim // 8,
-            (15, embed_dim // 8),
-            stride=(1, embed_dim // 8),
-            padding=(7, 0),
+        self.low_attention = nn.ModuleList(
+            [
+                EncoderBlock(
+                    dim=embed_dim * 2,
+                    window_size=4,
+                    num_heads=num_heads,
+                    attn_drop=attn_drop,
+                    proj_drop=mlp_drop,
+                    norm_layer=norm_layer,
+                )
+                for _ in range(num_layers[2])
+            ]
         )
-        self.conv3 = nn.Conv2d(
-            1,
-            embed_dim // 8,
-            (15, embed_dim // 8),
-            stride=(1, embed_dim // 8),
-            padding=(7, 0),
+        self.note_attention = nn.ModuleList(
+            [
+                EncoderBlock(
+                    dim=embed_dim,
+                    window_size=4,
+                    num_heads=num_heads,
+                    attn_drop=attn_drop,
+                    proj_drop=mlp_drop,
+                    norm_layer=norm_layer,
+                )
+                for _ in range(num_layers[3])
+            ]
         )
-        self.norm_layer1 = nn.LayerNorm([1024, embed_dim])
-        self.norm_layer2 = nn.LayerNorm([1024, embed_dim])
-        self.norm_layer3 = nn.LayerNorm([1024, embed_dim])
+        self.high_mlp = MLP([embed_dim * 8, embed_dim * 4], act_layer, mlp_drop)
+        self.mid_mlp = MLP([embed_dim * 4, embed_dim * 2], act_layer, mlp_drop)
+        self.low_mlp = MLP([embed_dim * 2, embed_dim], act_layer, mlp_drop)
 
     def forward(self, high, mid, low):
         """
         high : Tensor
-            shape of B x 16 x 512
+            shape of B x 16 x 8C
         mid : Tensor
-            shape of B x 64 x 256
+            shape of B x 64 x 4C
         low : Tensor
-            shape of B x 256 x 128
+            shape of B x 256 x 2C
         """
-        high = torch.stack([high] * 64, dim=1).transpose(1, 2).flatten(1, 2)
-        mid = torch.stack([mid] * 16, dim=1).transpose(1, 2).flatten(1, 2)
-        low = torch.stack([low] * 4, dim=1).transpose(1, 2).flatten(1, 2)
-        x = torch.concat([high, mid, low], dim=-1)
-        x = self.mlp1(x)
-        if self.train:
-            x = torch.randn(x.shape, device=x.device)*(0.1**0.5) + x
-        x = self.conv1(torch.unsqueeze(x, 1)).transpose(1, 2).flatten(-2) + x
-        x = self.norm_layer1(self.mlp2(x) + x)
-        if self.train:
-            x = torch.randn(x.shape, device=x.device)*(0.1**0.5) + x
-        x = self.conv2(torch.unsqueeze(x, 1)).transpose(1, 2).flatten(-2) + x
-        x = self.norm_layer2(self.mlp3(x) + x)
-        if self.train:
-            x = torch.randn(x.shape, device=x.device)*(0.1**0.5) + x
-        x = self.conv3(torch.unsqueeze(x, 1)).transpose(1, 2).flatten(-2) + x
-        x = self.norm_layer3(self.mlp4(x) + x)
-        return x
+        for layer in self.high_attention:
+            high = layer(high)
+        high = self.norm_layer1(self.high_mlp(high))
+        high = self.high_up(high.transpose(-1, -2)).transpose(-1, -2)
+        mid = mid + high
+        for layer in self.mid_attention:
+            mid = layer(mid)
+        mid = self.norm_layer2(self.mid_mlp(mid))
+        mid = self.mid_up(mid.transpose(-1, -2)).transpose(-1, -2)
+        low = low + mid 
+        for layer in self.low_attention:
+            low = layer(low)
+        low = self.norm_layer3(self.low_mlp(low))
+        low = self.low_up(low.transpose(-1, -2)).transpose(-1, -2)
+        for layer in self.note_attention:
+            low = layer(low)
+        return self.norm_layer4(low)
 
 
 class Generator(nn.Module):
@@ -131,6 +171,7 @@ class Generator(nn.Module):
         embed_dim,
         window_size=16,
         num_heads=4,
+        num_layers=[4, 4, 4, 4],
         downsample_res=4,
         depth=[8, 6, 4, 2],
         codebook_size=[128, 64, 32],
@@ -158,7 +199,16 @@ class Generator(nn.Module):
         )
         self.embed_dim = embed_dim
         self.seq_length = seq_length
-        self.decoder = Decoder(embed_dim, mlp_drop, act_layer)
+        self.decoder = Decoder(
+            embed_dim,
+            num_layers,
+            num_heads,
+            window_size,
+            attn_drop,
+            mlp_drop,
+            act_layer,
+            norm_layer,
+        )
         self.low_vq = VectorQuantizer(codebook_size[0], embed_dim * 2, commitment_loss)
         self.mid_vq = VectorQuantizer(codebook_size[1], embed_dim * 4, commitment_loss)
         self.high_vq = VectorQuantizer(codebook_size[2], embed_dim * 8, commitment_loss)
@@ -171,22 +221,31 @@ class Generator(nn.Module):
         high_encoded, mid_encoded, low_encoded = encoded[-1], encoded[-2], encoded[-3]
 
         # Vector Quantize
-        high_loss, high_quantized, high_perplexity, _ = self.high_vq(high_encoded)
-        mid_loss, mid_quantized, mid_perplexity, _ = self.mid_vq(mid_encoded)
-        low_loss, low_quantized, low_perplexity, _ = self.low_vq(low_encoded)
+        high_loss, high_quantized, high_perplexity, _ = self.high_vq(
+            F.normalize(high_encoded, dim=-1)
+        )
+        mid_loss, mid_quantized, mid_perplexity, _ = self.mid_vq(
+            F.normalize(mid_encoded, dim=-1)
+        )
+        low_loss, low_quantized, low_perplexity, _ = self.low_vq(
+            F.normalize(low_encoded, dim=-1)
+        )
 
         # Decoder
         decoded = self.decoder(high_quantized, mid_quantized, low_quantized)
 
         # Loss
         vq_loss = high_loss + mid_loss + low_loss
+        x = self.encoder.note_embed(x)
+        recon_loss = F.mse_loss(decoded, x)
+
         decoded_quantized = emb_to_index(decoded, self)
-        weights = torch.tensor(
-            [0.0625, 0.0625, 0.0938, 0.125, 0.25, 0.0625, 0.0938, 0.25]
-        ).to(x.device)
-        recon_loss = torch.nn.CrossEntropyLoss(weight=weights)(
-            x.view(-1, C).float(), decoded_quantized.view(-1, C).float()
-        )
+        # weights = torch.tensor(
+        #     [0.0625, 0.0625, 0.0938, 0.125, 0.25, 0.0625, 0.0938, 0.25]
+        # ).to(x.device)
+        # recon_loss = torch.nn.CrossEntropyLoss(weight=weights)(
+        #     x.view(-1, C).float(), decoded_quantized.view(-1, C).float()
+        # )
         return (
             decoded_quantized,
             vq_loss,
@@ -244,28 +303,55 @@ class Discriminator(nn.Module):
 if __name__ == "__main__":
     dataset = iter(MidiDataset())
     midi = next(dataset)
-    generator = Generator(embed_dim=32)
-    discriminator = Discriminator(embed_dim=32)
-    generator.load_state_dict(torch.load("checkpoints/model_epoch-30_loss-18.97.pt"))
+    midi = torch.unsqueeze(midi, 0)
+    generator = Generator(
+        embed_dim=16,
+        window_size=16,
+        num_heads=4,
+        num_layers=[4, 4, 4, 4],
+        downsample_res=4,
+        depth=[4, 4, 2, 2],
+        codebook_size=[64, 32, 16],
+        seq_length=1024,
+        attn_drop=0.5,
+        proj_drop=0.5,
+        mlp_drop=0.5,
+        commitment_loss=1.0,
+        act_layer=nn.GELU,
+        norm_layer=nn.LayerNorm,
+    )
+    discriminator = Discriminator(embed_dim=16)
+    generator.load_state_dict(
+    torch.load("checkpoints/model_epoch-40.pt")["gen_state_dict"]
+    )
+    print(generator.high_vq.embedding.weight)
     encoded = generator.encoder(midi)
-    print(midi.shape)
+    for ii, e in enumerate(encoded):
+        encoded[ii] = F.normalize(e, dim=-1)
+    fig, ax = plt.subplots(5)
+    sns.heatmap(encoded[0][0].detach().numpy(), ax=ax[0])
+    sns.heatmap(encoded[1][0].detach().numpy(), ax=ax[1])
+    sns.heatmap(encoded[2][0].detach().numpy(), ax=ax[2])
+    sns.heatmap(encoded[3][0].detach().numpy(), ax=ax[3])
+    sns.heatmap(encoded[4][0].detach().numpy(), ax=ax[4])
     _, high_quantized, high_perplexity, _ = generator.high_vq(encoded[-1])
     _, mid_quantized, mid_perplexity, _ = generator.mid_vq(encoded[-2])
     _, low_quantized, low_perplexity, _ = generator.low_vq(encoded[-3])
     # print(high_perplexity)
     # print(mid_perplexity)
     # print(low_perplexity)
-    # fig, ax = plt.subplots()
-    # sns.heatmap(high[0].detach().numpy(), ax=ax)
-    # sns.heatmap(mid[0].detach().numpy(), ax=ax)
-    # sns.heatmap(low[0].detach().numpy(), ax=ax)
-    # plt.show()
+    fig, ax = plt.subplots(3)
+    sns.heatmap(high_quantized[0].detach().numpy(), ax=ax[0])
+    sns.heatmap(mid_quantized[0].detach().numpy(), ax=ax[1])
+    sns.heatmap(low_quantized[0].detach().numpy(), ax=ax[2])
     decoded = generator.decoder(high_quantized, mid_quantized, low_quantized)
-    print(decoded.shape)
     decoded_quantized = emb_to_index(decoded, generator)
-    print(decoded_quantized.shape)
-    real_fake_value = discriminator(decoded_quantized)
-    print(real_fake_value)
+    fig, ax = plt.subplots(2)
+    sns.heatmap(decoded[0].detach().numpy(), ax=ax[0])
+    sns.heatmap(decoded_quantized[0].detach().numpy(), ax=ax[1])
+    # print(decoded_quantized.shape)
+    # real_fake_value = discriminator(decoded_quantized)
+    # print(real_fake_value)
 
-    # output, vq_loss, recon_loss = model(midi)
     # print(output.shape)
+    plt.show()

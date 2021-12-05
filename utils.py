@@ -62,8 +62,9 @@ def cosine_scheduler(
 
 def emb_to_index(outputs, model):
     B, N, C = outputs.shape
-    outputs = outputs.view(-1, 32)
+    outputs = outputs.view(-1, model.embed_dim)
     indices_outputs = []
+    embed_dim = model.embed_dim // 8
 
     emb = model.encoder.note_embed
     embs = [
@@ -79,9 +80,9 @@ def emb_to_index(outputs, model):
     # embs_dim = [8, 12, 10, 10, 10, 16, 20, 10]
     for i, emb in enumerate(embs):
         distances = (
-            torch.sum(outputs[..., 4*i:4*i+4] ** 2, dim=1, keepdim=True)
+            torch.sum(outputs[..., embed_dim*i:embed_dim*i+embed_dim] ** 2, dim=1, keepdim=True)
             + torch.sum(emb.weight[:-1] ** 2, dim=1)
-            - 2 * torch.matmul(outputs[..., 4*i:4*i+4], emb.weight[:-1].T)
+            - 2 * torch.matmul(outputs[..., embed_dim*i:embed_dim*i+embed_dim], emb.weight[:-1].T)
         )
         encoding_indices = torch.argmax(distances, dim=1).unsqueeze(1)
         indices_outputs.append(encoding_indices)

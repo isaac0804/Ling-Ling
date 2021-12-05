@@ -26,7 +26,7 @@ class MidiDataset(Dataset):
         filename = self.filenames[index]
         midi = muspy.read_midi(os.path.join(self.dir, filename))
 
-        time_scale = 0.5/midi.resolution
+        time_scale = 1000 * 0.5/midi.resolution
         notes = midi.tracks[0].notes
 
         pitch_range = [note.pitch - 21 for note in notes]
@@ -65,3 +65,4 @@ class MidiDataset(Dataset):
 # dataset = MidiDataset(global_local=None, random_mask=0.2)
 # a = iter(dataset)
 # data = next(a)
+# print(data[:10])

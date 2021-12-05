@@ -17,8 +17,8 @@ if __name__ == "__main__":
 
     # hyperparameters
     epochs = 1000
-    batch_size = 16
-    critic_frequency = 2
+    batch_size = 20
+    critic_frequency = 1
     # log_frequency = 100
 
     dataset = MidiDataset()
@@ -37,26 +37,27 @@ if __name__ == "__main__":
     # device = torch.device("cpu")
 
     generator = Generator(
-        embed_dim=32,
+        embed_dim=16,
         window_size=16,
         num_heads=4,
+        num_layers=[4, 4, 4, 4],
         downsample_res=4,
-        depth=[8, 6, 4, 2],
-        codebook_size=[128, 64, 32],
+        depth=[4, 4, 2, 2],
+        codebook_size=[64, 32, 16],
         seq_length=1024,
         attn_drop=0.5,
         proj_drop=0.5,
         mlp_drop=0.5,
-        commitment_loss=0.25,
+        commitment_loss=1.0,
         act_layer=nn.GELU,
         norm_layer=nn.LayerNorm,
     ).to(device)
     discriminator = Discriminator(
-        embed_dim=32,
+        embed_dim=16,
         window_size=16,
         num_heads=4,
         downsample_res=4,
-        depth=[8, 6, 4, 2],
+        depth=[4, 4, 2, 2],
         seq_length=1024,
         attn_drop=0.5,
         proj_drop=0.5,
@@ -120,7 +121,7 @@ if __name__ == "__main__":
             # Log
             writer.add_scalar(
                 "Discriminator", dis_loss.item(), it
-            )  # Get the real right
+            )  
             writer.add_scalar(
                 "Discriminator/Real Loss", real_loss.item(), it
             )  # Get the real right
@@ -146,7 +147,7 @@ if __name__ == "__main__":
                 gen_loss.backward()
                 gen_optimizer.step()
 
-                log_it = len(loader) * (epoch - 1) // critic_frequency + i
+                log_it = len(loader) * (epoch - critic_frequency + 1) // critic_frequency + i
                 writer.add_scalar("Generator/Quantization Loss", vq_loss.item(), log_it)
                 writer.add_scalar("Generator/Reconstruction Loss", recon_loss.item(), log_it)
                 writer.add_scalar("Generator/Realistic Loss", realistic_loss.item(), log_it)
@@ -167,9 +168,9 @@ if __name__ == "__main__":
                 "gen_optimizer": gen_optimizer.state_dict(),
                 "dis_optimizer": dis_optimizer.state_dict(),
             }
-            if best_loss > (running_loss) / len(loader):
+            if (epoch + 1) % 20 == 0:
                 best_loss = running_loss / len(loader)
                 torch.save(state_dict, f"checkpoints/model_epoch-{epoch+1}.pt")
-            elif (epoch + 1) % 50 == 0:
-                torch.save(state_dict, f"checkpoints/model_epoch-{epoch+1}.pt")
+            # elif best_loss > (running_loss) / len(loader):
+            #     torch.save(state_dict, f"checkpoints/model_epoch-{epoch+1}.pt")
     writer.close()

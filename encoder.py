@@ -1,3 +1,4 @@
+from typing import ForwardRef
 import torch
 import torch.nn as nn
 
@@ -76,6 +77,18 @@ class Attention(nn.Module):
         x = self.proj_drop(x)
         return x, attn
 
+class Transformer(nn.Module):
+    def __init__(self, dim, num_attn, num_heads=8, attn_drop=0.0, proj_drop=0.0):
+        super().__init__()
+        self.attns = nn.ModuleList([
+            Attention(dim, num_heads, attn_drop, proj_drop)
+            for _ in range(num_attn)
+        ])
+
+    def forward(self, x):
+        for attn in self.attns:
+            x = attn(x)[0]
+        return x
 
 class LocalBlock(nn.Module):
     def __init__(
@@ -185,60 +198,58 @@ class NoteEmbed(nn.Module):
         assert self.embed_dim % 8 == 0
 
         self.octave_embedding = nn.Embedding(
-            num_embeddings=8 + 1,
+            num_embeddings=8,
             embedding_dim=embed_dim // 8,
-            padding_idx=8,
             norm_type=2,
-            max_norm=2,
+            max_norm=1,
         )
         self.pitch_embedding = nn.Embedding(
-            num_embeddings=12 + 1,
+            num_embeddings=12,
             embedding_dim=embed_dim // 8,
-            padding_idx=12,
             norm_type=2,
-            max_norm=2,
+            max_norm=1,
         )
         self.short_duration_embedding = nn.Embedding(
-            num_embeddings=10 + 1,
+            num_embeddings=10,
             embedding_dim=embed_dim // 8,
-            padding_idx=10,
+            padding_idx=0,
             norm_type=2,
-            max_norm=2,
+            max_norm=1,
         )
         self.medium_duration_embedding = nn.Embedding(
-            num_embeddings=10 + 1,
+            num_embeddings=10,
             embedding_dim=embed_dim // 8,
-            padding_idx=10,
+            padding_idx=0,
             norm_type=2,
-            max_norm=2,
+            max_norm=1,
         )
         self.long_duration_embedding = nn.Embedding(
-            num_embeddings=10 + 1,
+            num_embeddings=10,
             embedding_dim=embed_dim // 8,
-            padding_idx=10,
+            padding_idx=0,
             norm_type=2,
-            max_norm=2,
+            max_norm=1,
         )
         self.velocity_embedding = nn.Embedding(
-            num_embeddings=16 + 1,
+            num_embeddings=16,
             embedding_dim=embed_dim // 8,
-            padding_idx=16,
+            padding_idx=0,
             norm_type=2,
-            max_norm=2,
+            max_norm=1,
         )
         self.short_shift_embedding = nn.Embedding(
-            num_embeddings=20 + 1,
+            num_embeddings=20,
             embedding_dim=embed_dim // 8,
-            padding_idx=20,
+            padding_idx=0,
             norm_type=2,
-            max_norm=2,
+            max_norm=1,
         )
         self.long_shift_embedding = nn.Embedding(
-            num_embeddings=10 + 1,
+            num_embeddings=10,
             embedding_dim=embed_dim // 8,
-            padding_idx=10,
+            padding_idx=0,
             norm_type=2,
-            max_norm=2,
+            max_norm=1,
         )
 
     def forward(self, x):
