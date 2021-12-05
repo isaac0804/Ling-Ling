@@ -1,96 +1,6 @@
 import torch
-from torch.functional import norm
 import torch.nn as nn
-import torch.nn.functional as F
-
-
-class MLP(nn.Module):
-    def __init__(self, features, act_layer=nn.GELU, drop=0.0):
-        super().__init__()
-        self.act_layer = act_layer()
-        self.drop = nn.Dropout(drop)
-        self.linear_layers = nn.ModuleList(
-            [nn.Linear(features[i], features[i + 1]) for i in range(len(features) - 1)]
-        )
-
-    def forward(self, x):
-        for idx, linear in enumerate(self.linear_layers):
-            x = linear(x)
-            x = self.act_layer(x)
-            if idx != len(self.linear_layers) - 1:
-                x = self.drop(x)
-        return x
-
-
-class Attention(nn.Module):
-    """Attention Implementation
-
-    Parameters
-    ----------
-    num_heads : int
-        Number of heads
-
-    head_dim : int
-        Dimension of data in each head
-    """
-
-    def __init__(self, dim, num_heads=8, attn_drop=0.0, proj_drop=0.0):
-        super().__init__()
-        self.num_heads = num_heads
-        assert dim % self.num_heads == 0
-        self.head_dim = dim // self.num_heads
-        self.scale = self.head_dim ** -0.5
-
-        self.qkv = nn.Linear(dim, dim * 3)
-        self.attn_drop = nn.Dropout(attn_drop)
-        self.proj = nn.Linear(dim, dim)
-        self.proj_drop = nn.Dropout(proj_drop)
-
-    def forward(self, x):
-        """Run the Forward Pass.
-
-        Parameters
-        ----------
-        x : torch.Tensor
-            Input Tensor of shape (batch_size, num_notes, dim)
-
-        Returns
-        -------
-        x : torch.FloatTensor
-            of shape (batch_size, num_notes, dim)
-
-        dim : torch.Tensor
-            of shape ()
-        """
-        B, N, C = x.shape
-        qkv = (
-            self.qkv(x)
-            .reshape(B, N, 3, self.num_heads, C // self.num_heads)
-            .permute(2, 0, 3, 1, 4)
-        )
-        q, k, v = qkv[0], qkv[1], qkv[2]
-
-        attn = (q @ k.transpose(-2, -1)) * self.scale
-        attn = attn.softmax(dim=-1)
-        attn = self.attn_drop(attn)
-
-        x = (attn @ v).transpose(1, 2).reshape(B, N, C)
-        x = self.proj(x)
-        x = self.proj_drop(x)
-        return x, attn
-
-
-class Transformer(nn.Module):
-    def __init__(self, dim, num_attn, num_heads=8, attn_drop=0.0, proj_drop=0.0):
-        super().__init__()
-        self.attns = nn.ModuleList(
-            [Attention(dim, num_heads, attn_drop, proj_drop) for _ in range(num_attn)]
-        )
-
-    def forward(self, x):
-        for attn in self.attns:
-            x = attn(x)[0]
-        return x
+from modules import MLP, Attention, Transformer
 
 
 class NoteEmbed(nn.Module):
@@ -98,8 +8,9 @@ class NoteEmbed(nn.Module):
 
     Parameters
     ----------
-    embedding_dim : int
-        Dimension of the note embedding vectors
+    embed_dim : int
+        Dimension of the note embedding vectors containing 8 features
+        Each feature embedded by {embed_dim // 8}-d vector
     """
 
     def __init__(self, embed_dim=64):
@@ -201,7 +112,28 @@ class NoteEmbed(nn.Module):
 
 
 class EncoderBlock(nn.Module):
-    """Encoder Block"""
+    """Encoder Block using Shifted window self attention
+
+    Parameters
+    ----------
+    dim : int
+        Embedding dimension
+
+    window_size : int
+        Window size of Swin Encoder
+
+    num_heads : int
+        Number of heads in each Attention Block
+
+    attn_drop : float
+        Dropout value for Attention
+
+    proj_drop : float
+        Dropout value for Projection layer or MLP
+
+    norm_layer : nn.Module
+        Normalization layer used in model
+    """
 
     def __init__(
         self,
@@ -217,12 +149,8 @@ class EncoderBlock(nn.Module):
         self.window_size = window_size
         self.norm_layer1 = norm_layer([window_size, dim])
         self.norm_layer2 = norm_layer([window_size, dim])
-        self.norm_layer3 = norm_layer([window_size, dim])
-        self.norm_layer4 = norm_layer([window_size, dim])
         self.attention = Attention(dim, num_heads, attn_drop, proj_drop)
         self.shifted_attention = Attention(dim, num_heads, attn_drop, proj_drop)
-        # self.mlp1 = MLP([dim, dim, dim], act_layer, mlp_drop)
-        # self.mlp2 = MLP([dim, dim, dim], act_layer, mlp_drop)
 
     def shift(self, x, reverse=False):
         if reverse:
@@ -232,15 +160,25 @@ class EncoderBlock(nn.Module):
         return x
 
     def forward(self, x):
+        """Run the Forward Pass.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input Tensor of shape (batch_size, num_notes, dim)
+
+        Returns
+        -------
+        x : torch.Tensor
+            Output Tensor of shape (batch_size, num_notes, dim)
+        """
         B, N, C = x.shape
         x = x.reshape(B * N // self.window_size, self.window_size, C)
         x = self.attention(self.norm_layer1(x))[0]
-        # x = self.mlp1(self.norm_layer2(y)) + x
         x = x.reshape(B, N, C)
         x = self.shift(x)
         x = x.reshape(B * N // self.window_size, self.window_size, C)
-        x = self.shifted_attention(self.norm_layer3(x))[0]
-        # x = self.mlp2(self.norm_layer4(y)) + x
+        x = self.shifted_attention(self.norm_layer2(x))[0]
         x = x.reshape(B, N, C)
         x = self.shift(x, reverse=True)
         return x
@@ -248,49 +186,81 @@ class EncoderBlock(nn.Module):
     def debug(self, x):
         B, N, C = x.shape
         x = x.reshape(B * N // self.window_size, self.window_size, C)
-        y, attn = self.attention(self.norm_layer1(x))
-        # x = self.mlp1(self.norm_layer2(y)) + x
+        x, attn = self.attention(self.norm_layer1(x))
         x = x.reshape(B, N, C)
         x = self.shift(x)
         x = x.reshape(B * N // self.window_size, self.window_size, C)
-        y, attn_2 = self.shifted_attention(self.norm_layer3(x))
-        # x = self.mlp2(self.norm_layer4(y)) + x
+        x, attn_2 = self.shifted_attention(self.norm_layer2(x))
         x = x.reshape(B, N, C)
         x = self.shift(x, reverse=True)
         return x, attn, attn_2
 
 
 class PatchMerge(nn.Module):
+    """Patch Merge, merge the consecutive notes to a higher dimension features
+
+    Parameters
+    ----------
+    dim : int
+        Embedding Dimension
+
+    downsample_ratio : int
+        Ratio of downsampling, default 4
+
+    mlp_drop : float
+        Dropout value for MLP
+
+    act_layer : nn.Module
+        Activation Layer
+
+    norm_layer : nn.Module
+        Normalization Layer
+    """
+
     def __init__(
         self,
         dim,
-        downsample_res=2,
-        mlp_drop=0.0,
+        downsample_ratio=4,
+        mlp_drop=0.5,
         act_layer=nn.GELU,
         norm_layer=nn.LayerNorm,
     ):
         super().__init__()
         self.dim = dim
-        self.downsample_res = downsample_res
+        self.downsample_ratio = downsample_ratio
         self.reduction = MLP(
             [
-                self.downsample_res * dim,
-                self.downsample_res // 2 * dim,
-                self.downsample_res // 2 * dim,
+                self.downsample_ratio * dim,
+                2 * dim,
+                2 * dim,
             ],
             act_layer,
             mlp_drop,
         )
-        self.norm_layer = norm_layer(self.downsample_res * dim)
+        self.norm_layer = norm_layer(self.downsample_ratio * dim)
 
     def forward(self, x):
+        """Run the forward pass.
+        
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input Tensor of shape (batch_size, num_notes, dim)
+            
+        Returns
+        -------
+        x : torch.Tensor
+            Output Tensor of shape (batch_size, num_notes // downsample_ratio, 2 * dim)
+        """
         B, N, C = x.shape
-        x = x.reshape(B, N // self.downsample_res, self.downsample_res * C)
+        x = x.reshape(B, N // self.downsample_ratio, self.downsample_ratio * C)
         x = self.reduction(self.norm_layer(x))
         return x
 
 
 class BasicBlock(nn.Module):
+    """Basic Block consists of Encoder Block and Patch Merge"""
+
     def __init__(
         self,
         dim,
@@ -429,7 +399,7 @@ if __name__ == "__main__":
         window_size=16,
         num_heads=4,
         downsample_res=4,
-        depth=[4,4,2,2],
+        depth=[4, 4, 2, 2],
         seq_length=1024,
         attn_drop=0.5,
         proj_drop=0.5,

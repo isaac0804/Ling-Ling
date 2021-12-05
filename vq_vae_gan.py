@@ -1,14 +1,10 @@
-from inspect import EndOfBlock
 import matplotlib.pyplot as plt
-import numpy as np
 import seaborn as sns
 import torch
-from torch.functional import norm
 import torch.nn as nn
 import torch.nn.functional as F
-from numpy.core.fromnumeric import shape
 
-from encoder import MLP, Attention, Transformer
+from modules import MLP
 from preprocess import MidiDataset
 from swin_encoder import EncoderBlock, SwinEncoder
 from utils import emb_to_index
@@ -77,15 +73,15 @@ class Decoder(nn.Module):
         self.high_up = nn.Upsample(scale_factor=4, mode="linear")
         self.mid_up = nn.Upsample(scale_factor=4, mode="linear")
         self.low_up = nn.Upsample(scale_factor=4, mode="linear")
-        self.norm_layer1 = nn.LayerNorm([16, embed_dim*4])
-        self.norm_layer2 = nn.LayerNorm([64, embed_dim*2])
+        self.norm_layer1 = nn.LayerNorm([16, embed_dim * 4])
+        self.norm_layer2 = nn.LayerNorm([64, embed_dim * 2])
         self.norm_layer3 = nn.LayerNorm([256, embed_dim])
         self.norm_layer4 = nn.LayerNorm([1024, embed_dim])
         self.high_attention = nn.ModuleList(
             [
                 EncoderBlock(
                     dim=embed_dim * 8,
-                    window_size=4,
+                    window_size=window_size,
                     num_heads=num_heads,
                     attn_drop=attn_drop,
                     proj_drop=mlp_drop,
@@ -98,7 +94,7 @@ class Decoder(nn.Module):
             [
                 EncoderBlock(
                     dim=embed_dim * 4,
-                    window_size=4,
+                    window_size=window_size,
                     num_heads=num_heads,
                     attn_drop=attn_drop,
                     proj_drop=mlp_drop,
@@ -155,7 +151,7 @@ class Decoder(nn.Module):
             mid = layer(mid)
         mid = self.norm_layer2(self.mid_mlp(mid))
         mid = self.mid_up(mid.transpose(-1, -2)).transpose(-1, -2)
-        low = low + mid 
+        low = low + mid
         for layer in self.low_attention:
             low = layer(low)
         low = self.norm_layer3(self.low_mlp(low))
@@ -240,10 +236,7 @@ class Generator(nn.Module):
         recon_loss = F.mse_loss(decoded, x)
 
         decoded_quantized = emb_to_index(decoded, self)
-        # weights = torch.tensor(
-        #     [0.0625, 0.0625, 0.0938, 0.125, 0.25, 0.0625, 0.0938, 0.25]
-        # ).to(x.device)
-        # recon_loss = torch.nn.CrossEntropyLoss(weight=weights)(
+        # recon_loss = torch.nn.CrossEntropyLoss()(
         #     x.view(-1, C).float(), decoded_quantized.view(-1, C).float()
         # )
         return (
@@ -322,7 +315,7 @@ if __name__ == "__main__":
     )
     discriminator = Discriminator(embed_dim=16)
     generator.load_state_dict(
-    torch.load("checkpoints/model_epoch-40.pt")["gen_state_dict"]
+        torch.load("checkpoints/model_epoch-40.pt")["gen_state_dict"]
     )
     print(generator.high_vq.embedding.weight)
     encoded = generator.encoder(midi)

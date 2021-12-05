@@ -1,14 +1,11 @@
-import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import tqdm
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 from preprocess import MidiDataset
-from swin_encoder import SwinEncoder
-from utils import cosine_scheduler, emb_to_index, fix_random_seeds, requires_grad
+from utils import cosine_scheduler, fix_random_seeds, requires_grad
 from vq_vae_gan import Discriminator, Generator
 
 if __name__ == "__main__":
@@ -23,7 +20,6 @@ if __name__ == "__main__":
 
     dataset = MidiDataset()
     loader = DataLoader(dataset, shuffle=True, batch_size=batch_size, drop_last=True)
-
 
     learning_rate_scheduler = cosine_scheduler(
         base_value=1e-4,
@@ -119,9 +115,7 @@ if __name__ == "__main__":
             dis_optimizer.step()
 
             # Log
-            writer.add_scalar(
-                "Discriminator", dis_loss.item(), it
-            )  
+            writer.add_scalar("Discriminator", dis_loss.item(), it)
             writer.add_scalar(
                 "Discriminator/Real Loss", real_loss.item(), it
             )  # Get the real right
@@ -147,10 +141,16 @@ if __name__ == "__main__":
                 gen_loss.backward()
                 gen_optimizer.step()
 
-                log_it = len(loader) * (epoch - critic_frequency + 1) // critic_frequency + i
+                log_it = (
+                    len(loader) * (epoch - critic_frequency + 1) // critic_frequency + i
+                )
                 writer.add_scalar("Generator/Quantization Loss", vq_loss.item(), log_it)
-                writer.add_scalar("Generator/Reconstruction Loss", recon_loss.item(), log_it)
-                writer.add_scalar("Generator/Realistic Loss", realistic_loss.item(), log_it)
+                writer.add_scalar(
+                    "Generator/Reconstruction Loss", recon_loss.item(), log_it
+                )
+                writer.add_scalar(
+                    "Generator/Realistic Loss", realistic_loss.item(), log_it
+                )
                 writer.add_scalar("Perplexity/High", perplexity[0], log_it)
                 writer.add_scalar("Perplexity/Middle", perplexity[1], log_it)
                 writer.add_scalar("Perplexity/Low", perplexity[2], log_it)
