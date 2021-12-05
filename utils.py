@@ -28,38 +28,6 @@ def cosine_scheduler(
     assert len(schedule) == epochs * niter_per_ep
     return schedule
 
-
-# def emb_to_index(outputs, model):
-#     B, N, C = outputs.shape
-#     outputs = outputs.view(-1, 64)
-#     quantized_outputs = []
-#     emb = model.encoder.note_embed
-#     embs = [
-#         emb.octave_embedding,
-#         emb.pitch_embedding,
-#         emb.short_duration_embedding,
-#         emb.medium_duration_embedding,
-#         emb.long_duration_embedding,
-#         emb.velocity_embedding,
-#         emb.short_shift_embedding,
-#         emb.long_shift_embedding,
-#     ]
-#     embs_dim = [8, 12, 10, 10, 10, 16, 20, 10]
-#     for i, emb in enumerate(embs):
-#         distances = (
-#             torch.sum(outputs[..., 8*i:8*i+8] ** 2, dim=1, keepdim=true)
-#             + torch.sum(emb.weight ** 2, dim=1)
-#             - 2 * torch.matmul(outputs[..., 8*i:8*i+8], emb.weight.t)
-#         )
-#         encoding_indices = torch.argmax(distances, dim=1).unsqueeze(1)
-#         encodings = torch.zeros(encoding_indices.shape[0], embs_dim[i], device=outputs.device)
-#         encodings.scatter_(1, encoding_indices, 1)
-#         quantized = torch.matmul(encodings, emb.weight[:-1]).view(B, N, 8)
-#         quantized_outputs.append(quantized)
-#     quantized_outputs = torch.concat(quantized_outputs, dim=-1)
-#     return quantized_outputs
-
-
 def emb_to_index(outputs, model):
     B, N, C = outputs.shape
     outputs = outputs.view(-1, model.embed_dim)

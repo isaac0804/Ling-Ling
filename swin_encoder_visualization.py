@@ -26,8 +26,6 @@ model = SwinEncoder(
     norm_layer=nn.LayerNorm,
 )
 
-# model.load_state_dict(torch.load("checkpoints/model_epoch-100_loss-6.24.pt"))
-model.load_state_dict(torch.load("checkpoints/model_epoch-100_loss-6.24.pt"))
 model.eval()
 
 dataset = MidiDataset()

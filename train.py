@@ -4,7 +4,7 @@ import tqdm
 from torch.optim import Adam
 from torch.utils.data import DataLoader, Dataset
 
-from loss import GlobalLoss, PairLoss
+from dino_loss import GlobalLoss, PairLoss
 from model import Model
 from preprocess import MidiDataset
 

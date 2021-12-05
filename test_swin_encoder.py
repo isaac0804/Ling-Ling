@@ -2,7 +2,6 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
 
 from swin_encoder import SwinEncoder
 from preprocess import MidiDataset

@@ -11,7 +11,7 @@ import torch.nn.functional as F
 
 from encoder import Encoder
 from preprocess import MidiDataset
-from vq_vae import Generator
+from vq_vae_gan import Generator
 
 model = Generator(
     embed_dim=32,

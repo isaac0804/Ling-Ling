@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 
 from swin_encoder import SwinEncoder
 from utils import cosine_scheduler, fix_random_seeds
-from loss import GlobalLoss, gradient_clipping
+from dino_loss import GlobalLoss, gradient_clipping
 from preprocess import MidiDataset
 
 fix_random_seeds(seed=42)

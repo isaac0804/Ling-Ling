@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from utils import emb_to_index, fix_random_seeds
-from vq_vae import Generator
+from vq_vae_gan import Generator
 
 seed = 128
 fix_random_seeds(seed)

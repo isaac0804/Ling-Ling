@@ -19,3 +19,6 @@ DINO is not build for generation task (or it is, but my data is not enough), and
 - [ ] Argparser
 - [x] TensorBoard Visualization
 - [x] Attention Visualizer
+
+- [ ] Refactoring
+- [ ] Unit Test
