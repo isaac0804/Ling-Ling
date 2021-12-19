@@ -1,24 +1,35 @@
 # Ling Ling
 
 Ling Ling v1 is a generative deep learning model that involves transformer encoders (Feature Learning) and VQ-VAE (Generative).
-Transformer Encoders are trained using DINO Self-Supervised Learning method to learn features in the given dataset. 
+Transformer Encoders are trained using DINO Self-Supervised Learning method to learn features in the given dataset.
 
 ## Status
 
-DINO is not build for generation task (or it is, but my data is not enough), and vq vae seems required more data than I have in order to learn and produce meaningful results. In general, I suspect the poor performance of current state might caused by limitation of data although there exists ~12 hours of music file, which is quite a lot for any human to learn and analyze. I will be looking for other more data-efficient model.
+6 Dec 2021
+
+DINO is not build for generation task (or it is, but my data is not enough), and vq vae seems required more data than I have in order to learn and produce meaningful results.
+In general, I suspect the poor performance of current state might caused by limitation of data although there exists ~12 hours of music file, which is quite a lot for any human to learn and analyze.
+I will be looking for other more data-efficient model.
+
+19 Dec 2021
+
+PianoBERT seems working well (listen to [midi files](samples/)).
+Using MSE Loss and quantize the outputs to the initial embedding produces really bad results, playing same note over and over.
+However, using different heads after the last layer to predict each properties of a note dramatically improves the result.
+The model is able to reconstruct (encode and decode) the song and produce some interesting melody when certain notes are masked. [Example](samples/Good-3.mid)
+Looks like attention and specific property output head are what I need (maybe), this might explains why the previous models perform badly.
+The use of Absolute Positional Encoding product slightly worse model.
+It is unclear regarding the generative ability of PianoBERT at the current stage.
+I tried mask all the notes, ended up receive garbage.
 
 ## TODO
 
-- [x] Data Augmentation (for ablation study)
-  - [x] Local Global View
-  - [ ] Note masking
 - [x] More efficient data Loader
 - [x] Learning Rate scheduler
 - [x] Loss scheduler
 - [x] Momentum scheduler
-- [ ] Argparser
+- [x] ~~Argparser~~ Config file (I dont like argparser, using a config file is probably easier)
 - [x] TensorBoard Visualization
 - [x] Attention Visualizer
-
-- [ ] Refactoring
-- [ ] Unit Test
+- [x] Refactoring
+- [x] Unit Test (Maybe I need more of this)

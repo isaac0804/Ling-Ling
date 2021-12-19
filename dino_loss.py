@@ -100,11 +100,20 @@ class PairLoss(nn.Module):
             1 - self.center_momentum
         )
 
+if __name__ == "__main__":
+    global_loss = GlobalLoss(16, 0.01, 0.06, 10, 10)
+    pair_loss = PairLoss(16)
 
-def gradient_clipping(model, clip=2.0):
-    for p in model.parameters():
-        if p.grad is not None:
-            param_norm = p.grad.data.norm()
-            clip_coef = clip / (param_norm + 1e-6)
-            if clip_coef < 1:
-                p.grad.data.mul_(clip_coef)
+    a = torch.ones(16)
+    b = torch.randn(16)
+
+    print(a)
+    print(b)
+
+    print("global")
+    print(global_loss(a, a, 0))
+    print(global_loss(a, b, 0))
+    print(global_loss(b, b, 0))
+
+    print("pair")
+    print(pair_loss(torch.unsqueeze(a,0), torch.unsqueeze(a, 0)))

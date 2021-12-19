@@ -32,16 +32,16 @@ class Attention(nn.Module):
         Dimension of data in each head
     """
 
-    def __init__(self, dim, num_heads=8, attn_drop=0.0, proj_drop=0.0):
+    def __init__(self, embedding_dim, num_heads=8, attn_drop=0.0, proj_drop=0.0):
         super().__init__()
         self.num_heads = num_heads
-        assert dim % self.num_heads == 0
-        self.head_dim = dim // self.num_heads
+        assert embedding_dim % self.num_heads == 0
+        self.head_dim = embedding_dim // self.num_heads
         self.scale = self.head_dim ** -0.5
 
-        self.qkv = nn.Linear(dim, dim * 3)
+        self.qkv = nn.Linear(embedding_dim, embedding_dim * 3)
         self.attn_drop = nn.Dropout(attn_drop)
-        self.proj = nn.Linear(dim, dim)
+        self.proj = nn.Linear(embedding_dim, embedding_dim)
         self.proj_drop = nn.Dropout(proj_drop)
 
     def forward(self, x):
@@ -78,14 +78,115 @@ class Attention(nn.Module):
         return x, attn
 
 
-class Transformer(nn.Module):
-    def __init__(self, dim, num_attn, num_heads=8, attn_drop=0.0, proj_drop=0.0):
+# class Transformer(nn.Module):
+#     def __init__(self, dim, num_attn, num_heads=8, attn_drop=0.0, proj_drop=0.0):
+#         super().__init__()
+#         self.attns = nn.ModuleList(
+#             [Attention(dim, num_heads, attn_drop, proj_drop) for _ in range(num_attn)]
+#         )
+
+#     def forward(self, x):
+#         for attn in self.attns:
+#             x = attn(x)[0]
+#         return x
+
+class NoteEmbed(nn.Module):
+    """Note to Embedding.
+
+    Parameters
+    ----------
+    embed_dim : int
+        Dimension of the note embedding vectors containing 8 features
+        Each feature embedded by {embed_dim // 8}-d vector
+    """
+
+    def __init__(self, embedding_dim=64):
         super().__init__()
-        self.attns = nn.ModuleList(
-            [Attention(dim, num_heads, attn_drop, proj_drop) for _ in range(num_attn)]
+        self.embed_dim = embedding_dim
+        assert self.embed_dim % 8 == 0
+
+        self.octave_embedding = nn.Embedding(
+            num_embeddings=8 + 3,
+            embedding_dim=embedding_dim // 8,
+            norm_type=2,
+            max_norm=1,
+        )
+        self.pitch_embedding = nn.Embedding(
+            num_embeddings=12 + 3,
+            embedding_dim=embedding_dim // 8,
+            norm_type=2,
+            max_norm=1,
+        )
+        self.short_duration_embedding = nn.Embedding(
+            num_embeddings=10 + 3,
+            embedding_dim=embedding_dim // 8,
+            norm_type=2,
+            max_norm=1,
+        )
+        self.medium_duration_embedding = nn.Embedding(
+            num_embeddings=10 + 3,
+            embedding_dim=embedding_dim // 8,
+            norm_type=2,
+            max_norm=1,
+        )
+        self.long_duration_embedding = nn.Embedding(
+            num_embeddings=10 + 3,
+            embedding_dim=embedding_dim // 8,
+            norm_type=2,
+            max_norm=1,
+        )
+        self.velocity_embedding = nn.Embedding(
+            num_embeddings=16 + 3,
+            embedding_dim=embedding_dim // 8,
+            norm_type=2,
+            max_norm=1,
+        )
+        self.short_shift_embedding = nn.Embedding(
+            num_embeddings=20 + 3,
+            embedding_dim=embedding_dim // 8,
+            norm_type=2,
+            max_norm=1,
+        )
+        self.long_shift_embedding = nn.Embedding(
+            num_embeddings=10 + 3,
+            embedding_dim=embedding_dim // 8,
+            norm_type=2,
+            max_norm=1,
         )
 
     def forward(self, x):
-        for attn in self.attns:
-            x = attn(x)[0]
-        return x
+        """Forward Pass of Note Embedding
+
+        Parameters
+        ----------
+        x : torch.LongTensor
+            Input Tensor of shape (batch_size, num_notes, 8)
+
+        Returns
+        -------
+        emb : torch.FloatTensor
+            Note Embedding of shape (batch_size, num_notes, embedding_dim)
+        """
+        octave = self.octave_embedding(x[..., 0])
+        pitch = self.pitch_embedding(x[..., 1])
+        short_note = self.short_duration_embedding(x[..., 2])
+        medium_note = self.medium_duration_embedding(x[..., 3])
+        long_note = self.long_duration_embedding(x[..., 4])
+        velocity = self.velocity_embedding(x[..., 5])
+        short_shift = self.short_shift_embedding(x[..., 6])
+        long_shift = self.long_shift_embedding(x[..., 7])
+
+        emb = torch.concat(
+            [
+                octave,
+                pitch,
+                short_note,
+                medium_note,
+                long_note,
+                velocity,
+                short_shift,
+                long_shift,
+            ],
+            dim=-1,
+        )
+        return emb
