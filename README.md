@@ -3,6 +3,8 @@
 Ling Ling v1 is a generative deep learning model that involves transformer encoders (Feature Learning) and VQ-VAE (Generative).
 Transformer Encoders are trained using DINO Self-Supervised Learning method to learn features in the given dataset.
 
+This is the lab, do whatever you want.
+
 ## Status
 
 6 Dec 2021
