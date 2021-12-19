@@ -1,7 +1,6 @@
 # Ling Ling
 
-Ling Ling v1 is a generative deep learning model that involves transformer encoders (Feature Learning) and VQ-VAE (Generative).
-Transformer Encoders are trained using DINO Self-Supervised Learning method to learn features in the given dataset.
+Ling Ling is a project aiming to build a deep generative model to generate nice (very subjective, I know) Piano music.
 
 ## Status
 
